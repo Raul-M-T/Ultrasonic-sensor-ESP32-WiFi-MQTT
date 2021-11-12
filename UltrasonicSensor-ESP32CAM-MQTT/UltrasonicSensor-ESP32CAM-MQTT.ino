@@ -22,25 +22,31 @@
 //Bibliotecas
 #include <WiFi.h>  // Biblioteca para el control de WiFi
 #include <PubSubClient.h> //Biblioteca para conexion MQTT
+#include <Ultrasonic.h> // Biblioteca para conectarse al sensor
 
 //Datos de WiFi
 const char* ssid = "ARRIS-D76F12";  // Pon aquí el nombre de la red a la que deseas conectarte
 const char* password = "2C9669AED67F";  // Escribe la contraseña de dicha red
 
 //Datos del broker MQTT
-const char* mqtt_server = "3.121.120.155"; // Si estas en una red local, coloca la IP asignada, en caso contrario, coloca la IP publica,192.168.0.9  192.168.56.1
-IPAddress server(3,121,120,155);
-// IPaddress 189.216.115.134,  broker.hivemq 3.121.120.155
-// Objetos
-WiFiClient espClient; // Este objeto maneja los datos de conexion WiFi
-PubSubClient client(espClient); // Este objeto maneja los datos de conexion al broker
+const char* mqtt_server = "192.168.0.28"; // Si estas en una red local, coloca la IP asignada, en caso contrario, coloca la IP publica,192.168.0.9  192.168.56.1
+IPAddress server(192,168,0,28);  //192.168.0.28 local ip
+// IPaddress 18.194.65.151,  broker.hivemq > nslookup broker.hivemq.com
 
 // Variables
 int flashLedPin = 4;  // Para indicar el estatus de conexión
 int statusLedPin = 33; // Para ser controlado por MQTT 
 long timeNow, timeLast; // Variables de control de tiempo no bloqueante
-int data = 0; // Contador
-int wait = 10000;  // Indica la espera cada 10 segundos para envío de mensajes MQTT
+int distancia = 0; // Contador
+int wait = 5000;  // Indica la espera cada 5 segundos para envío de mensajes MQTT
+int pinTrigger = 15; // pin del trigger
+int pinEcho = 14;   // pin del echo
+
+//
+// Objetos
+WiFiClient espClient; // Este objeto maneja los datos de conexion WiFi
+PubSubClient client(espClient); // Este objeto maneja los datos de conexion al broker
+Ultrasonic ultrasonic(pinTrigger,pinEcho); // Objeto que maneja sensor
 
 // Inicialización del programa
 void setup() {
@@ -87,6 +93,7 @@ void setup() {
   timeLast = millis (); // Inicia el control de tiempo
 }// fin del void setup ()
 
+//************************************************************
 // Cuerpo del programa, bucle principal
 void loop() {
   //Verificar siempre que haya conexión al broker
@@ -99,12 +106,15 @@ void loop() {
   if (timeNow - timeLast > wait) { // Manda un mensaje por MQTT cada cinco segundos
     timeLast = timeNow; // Actualización de seguimiento de tiempo
 
-    data++; // Incremento a la variable para ser enviado por MQTT
+//******************************************************************
+//Lectura del sensor ultrasonic
+    distancia = ultrasonic.read(); // lectura del sensor para ser enviado por MQTT
+ 
     char dataString[8]; // Define una arreglo de caracteres para enviarlos por MQTT, especifica la longitud del mensaje en 8 caracteres
-    dtostrf(data, 1, 2, dataString);  // Esta es una función nativa de leguaje AVR que convierte un arreglo de caracteres en una variable String
-    Serial.print("Contador: "); // Se imprime en monitor solo para poder visualizar que el evento sucede
+    dtostrf(distancia, 1, 2, dataString);  // Esta es una función nativa de leguaje AVR que convierte un arreglo de caracteres en una variable String
+    Serial.print("D: "); // Se imprime en monitor solo para poder visualizar que el evento sucede
     Serial.println(dataString);
-    client.publish("esp32/data", dataString); // Esta es la función que envía los datos por MQTT, especifica el tema y el valor
+    client.publish("codigoiot/dis/rmt", dataString); // Esta es la función que envía los datos por MQTT, especifica el tema y el valor
   }// fin del if (timeNow - timeLast > wait)
 }// fin del void loop ()
 
@@ -133,34 +143,34 @@ void callback(char* topic, byte* message, unsigned int length) {
 
   // Ejemplo, en caso de recibir el mensaje true - false, se cambiará el estado del led soldado en la placa.
   // El ESP323CAM está suscrito al tema esp/output
-  if (String(topic) == "esp32/output") {  // En caso de recibirse mensaje en el tema esp32/output
+  if (String(topic) == "codigoiot/respuesta/raulmt") {  // En caso de recibirse mensaje en el tema codigoiot/respuesta/raulmt
     if(messageTemp == "true"){
       Serial.println("Led encendido");
       digitalWrite(flashLedPin, HIGH);
-    }// fin del if (String(topic) == "esp32/output")
+    }// fin del if (String(topic) == "codigoiot/respuesta/raulmt")
     else if(messageTemp == "false"){
       Serial.println("Led apagado");
       digitalWrite(flashLedPin, LOW);
     }// fin del else if(messageTemp == "false")
-  }// fin del if (String(topic) == "esp32/output")
+  }// fin del if (String(topic) == "codigoiot/respuesta/raulmt")
 }// fin del void callback
 
 // Función para reconectarse
 void reconnect() {
   // Bucle hasta lograr conexión
   while (!client.connected()) { // Pregunta si hay conexión
-    Serial.print("Tratando de contectarse...");
+    Serial.print("-"); //minimo de caracteres por timpo de transmisión
     // Intentar reconexión
     if (client.connect("ESP32CAMClient")) { //Pregunta por el resultado del intento de conexión
-      Serial.println("Conectado");
-      client.subscribe("esp32/output"); // Esta función realiza la suscripción al tema
+      Serial.print("+"); //reducciòn a un caracter para optimizar tiempos
+      client.subscribe("codigoiot/respuesta/raulmt"); // Esta función realiza la suscripción al tema
     }// fin del  if (client.connect("ESP32CAMClient"))
     else {  //en caso de que la conexión no se logre
-      Serial.print("Conexion fallida, Error rc=");
+      Serial.print("Err="); //limitar caracteres para optimizar tiempo
       Serial.print(client.state()); // Muestra el codigo de error
-      Serial.println(" Volviendo a intentar en 5 segundos");
-      // Espera de 5 segundos bloqueante
-      delay(5000);
+      Serial.println("__");
+      // Espera de medio segundos bloqueante
+      delay(500); //optimizar tiempo en reconeción
       Serial.println (client.connected ()); // Muestra estatus de conexión
     }// fin del else
   }// fin del bucle while (!client.connected())
